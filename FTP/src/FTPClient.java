@@ -5,7 +5,6 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.awt.Insets;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -19,6 +18,7 @@ import java.io.PrintWriter;
 import java.net.Socket;
 
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
@@ -56,7 +56,7 @@ public class FTPClient extends JFrame {
     
     public FTPClient() {
         setTitle("FTP Client");
-        setSize(650, 550);
+        setSize(700, 600);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         
@@ -182,6 +182,7 @@ public class FTPClient extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
+        // Top Panel
         JPanel topPanel = new JPanel();
         JLabel welcomeLabel = new JLabel("Connected to FTP Server");
         welcomeLabel.setFont(new Font("Arial", Font.BOLD, 16));
@@ -192,10 +193,10 @@ public class FTPClient extends JFrame {
         topPanel.add(logoutBtn);
         panel.add(topPanel, BorderLayout.NORTH);
         
-        // Split pane for file list and content viewer
+        // Split pane
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
         
-        // Left panel - File List
+        // Left - File List
         JPanel leftPanel = new JPanel(new BorderLayout(5, 5));
         leftPanel.setBorder(BorderFactory.createTitledBorder("Server Files"));
         
@@ -211,7 +212,7 @@ public class FTPClient extends JFrame {
         
         splitPane.setLeftComponent(leftPanel);
         
-        // Right panel - File Content Viewer
+        // Right - File Viewer
         JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
         rightPanel.setBorder(BorderFactory.createTitledBorder("File Viewer"));
         
@@ -240,27 +241,37 @@ public class FTPClient extends JFrame {
         
         panel.add(splitPane, BorderLayout.CENTER);
         
-        JPanel bottomPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        // Bottom Panel - FIXED: Dùng BoxLayout thay vì GridLayout
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
+        bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
         
-        JPanel uploadPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        uploadPanel.add(new JLabel("Upload File Path:"));
-        uploadFilePath = new JTextField(25);
+        // Upload Panel
+        JPanel uploadPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        uploadPanel.add(new JLabel("Upload File:"));
+        uploadFilePath = new JTextField(30);
         uploadPanel.add(uploadFilePath);
-        JButton uploadBtn = new JButton("Upload");
-        uploadBtn.addActionListener(e -> uploadFile());
-        uploadPanel.add(uploadBtn);
         JButton browseBtn = new JButton("Browse");
         browseBtn.addActionListener(e -> browseFile());
         uploadPanel.add(browseBtn);
-        bottomPanel.add(uploadPanel);
+        JButton uploadBtn = new JButton("Upload");
+        uploadBtn.setBackground(new Color(76, 175, 80));
+        uploadBtn.setForeground(Color.WHITE);
+        uploadBtn.addActionListener(e -> uploadFile());
+        uploadPanel.add(uploadBtn);
         
-        JPanel downloadPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        downloadPanel.add(new JLabel("Download File Name:"));
-        downloadFileName = new JTextField(25);
+        // Download Panel
+        JPanel downloadPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+        downloadPanel.add(new JLabel("Download File:"));
+        downloadFileName = new JTextField(30);
         downloadPanel.add(downloadFileName);
         JButton downloadBtn = new JButton("Download");
+        downloadBtn.setBackground(new Color(33, 150, 243));
+        downloadBtn.setForeground(Color.WHITE);
         downloadBtn.addActionListener(e -> downloadFile());
         downloadPanel.add(downloadBtn);
+        
+        bottomPanel.add(uploadPanel);
         bottomPanel.add(downloadPanel);
         
         panel.add(bottomPanel, BorderLayout.SOUTH);
@@ -268,21 +279,16 @@ public class FTPClient extends JFrame {
         return panel;
     }
     
-    private void connectToServer() {
-        try {
-            String host = serverHost.getText().trim();
-            int port = Integer.parseInt(serverPort.getText().trim());
-            
-            socket = new Socket(host, port);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
-            
-            String response = in.readLine();
-            System.out.println(response);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Connection failed: " + e.getMessage(), 
-                "Error", JOptionPane.ERROR_MESSAGE);
-        }
+    private void connectToServer() throws Exception {
+        String host = serverHost.getText().trim();
+        int port = Integer.parseInt(serverPort.getText().trim());
+        
+        socket = new Socket(host, port);
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        out = new PrintWriter(socket.getOutputStream(), true);
+        
+        String response = in.readLine();
+        System.out.println("Server: " + response);
     }
     
     private void handleLogin() {
@@ -300,11 +306,11 @@ public class FTPClient extends JFrame {
             
             out.println("USER " + username);
             String response = in.readLine();
-            System.out.println(response);
+            System.out.println("Server: " + response);
             
             out.println("PASS " + password);
             response = in.readLine();
-            System.out.println(response);
+            System.out.println("Server: " + response);
             
             if (response.startsWith("230")) {
                 cardLayout.show(mainPanel, "ftp");
@@ -319,6 +325,7 @@ public class FTPClient extends JFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -344,7 +351,7 @@ public class FTPClient extends JFrame {
             
             out.println("REGISTER " + username + " " + password);
             String response = in.readLine();
-            System.out.println(response);
+            System.out.println("Server: " + response);
             
             if (response.startsWith("200")) {
                 JOptionPane.showMessageDialog(this, "Registration successful! Please login.", 
@@ -362,6 +369,7 @@ public class FTPClient extends JFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -382,7 +390,8 @@ public class FTPClient extends JFrame {
                         if (!file.isEmpty()) {
                             String[] parts = file.split(":");
                             if (parts.length == 2) {
-                                fileListArea.append(parts[0] + " (" + parts[1] + " bytes)\n");
+                                fileListArea.append(String.format("%-30s %10s bytes\n", 
+                                    parts[0], parts[1]));
                             }
                         }
                     }
@@ -393,6 +402,7 @@ public class FTPClient extends JFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error listing files: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -420,35 +430,52 @@ public class FTPClient extends JFrame {
                 return;
             }
             
-            out.println("UPLOAD " + file.getName());
+            // Gửi lệnh UPLOAD
+            out.println("UPLOAD " + file.getName() + " " + file.length());
+            out.flush();
+            
             String response = in.readLine();
+            System.out.println("Server: " + response);
             
             if (response.startsWith("150")) {
-                out.println(file.length());
-                
+                // Gửi file data trực tiếp qua OutputStream
                 FileInputStream fis = new FileInputStream(file);
                 OutputStream os = socket.getOutputStream();
                 
                 byte[] buffer = new byte[4096];
                 int bytesRead;
+                long totalSent = 0;
+                
                 while ((bytesRead = fis.read(buffer)) != -1) {
                     os.write(buffer, 0, bytesRead);
+                    totalSent += bytesRead;
                 }
                 
                 fis.close();
                 os.flush();
                 
+                // Đợi xác nhận
                 response = in.readLine();
+                System.out.println("Server: " + response);
+                
                 if (response.startsWith("226")) {
-                    JOptionPane.showMessageDialog(this, "File uploaded successfully!", 
+                    JOptionPane.showMessageDialog(this, 
+                        "File uploaded successfully! (" + totalSent + " bytes)", 
                         "Success", JOptionPane.INFORMATION_MESSAGE);
                     uploadFilePath.setText("");
                     listFiles();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Upload failed: " + response, 
+                        "Error", JOptionPane.ERROR_MESSAGE);
                 }
+            } else {
+                JOptionPane.showMessageDialog(this, "Server refused upload: " + response, 
+                    "Error", JOptionPane.ERROR_MESSAGE);
             }
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Upload error: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -461,16 +488,22 @@ public class FTPClient extends JFrame {
         }
         
         try {
+            // Gửi lệnh DOWNLOAD
             out.println("DOWNLOAD " + fileName);
+            out.flush();
+            
             String response = in.readLine();
+            System.out.println("Server: " + response);
             
             if (response.startsWith("150")) {
-                long fileSize = Long.parseLong(response.substring(4));
+                long fileSize = Long.parseLong(response.substring(4).trim());
                 
+                // Tạo thư mục downloads
                 File downloadDir = new File("client_downloads");
                 downloadDir.mkdirs();
                 File file = new File(downloadDir, fileName);
                 
+                // Nhận file data
                 FileOutputStream fos = new FileOutputStream(file);
                 InputStream is = socket.getInputStream();
                 
@@ -478,19 +511,30 @@ public class FTPClient extends JFrame {
                 long totalRead = 0;
                 int bytesRead;
                 
-                while (totalRead < fileSize && (bytesRead = is.read(buffer)) != -1) {
+                while (totalRead < fileSize) {
+                    int toRead = (int) Math.min(buffer.length, fileSize - totalRead);
+                    bytesRead = is.read(buffer, 0, toRead);
+                    if (bytesRead == -1) break;
+                    
                     fos.write(buffer, 0, bytesRead);
                     totalRead += bytesRead;
                 }
                 
                 fos.close();
                 
+                // Đợi xác nhận
                 response = in.readLine();
+                System.out.println("Server: " + response);
+                
                 if (response.startsWith("226")) {
                     JOptionPane.showMessageDialog(this, 
-                        "File downloaded to: " + file.getAbsolutePath(), 
+                        "File downloaded successfully!\nSaved to: " + file.getAbsolutePath() + 
+                        "\n(" + totalRead + " bytes)", 
                         "Success", JOptionPane.INFORMATION_MESSAGE);
                     downloadFileName.setText("");
+                } else {
+                    JOptionPane.showMessageDialog(this, "Download incomplete", 
+                        "Warning", JOptionPane.WARNING_MESSAGE);
                 }
             } else {
                 JOptionPane.showMessageDialog(this, "File not found on server!", 
@@ -499,6 +543,7 @@ public class FTPClient extends JFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Download error: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -512,10 +557,13 @@ public class FTPClient extends JFrame {
         
         try {
             out.println("DOWNLOAD " + fileName);
+            out.flush();
+            
             String response = in.readLine();
+            System.out.println("Server: " + response);
             
             if (response.startsWith("150")) {
-                long fileSize = Long.parseLong(response.substring(4));
+                long fileSize = Long.parseLong(response.substring(4).trim());
                 
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 InputStream is = socket.getInputStream();
@@ -524,12 +572,18 @@ public class FTPClient extends JFrame {
                 long totalRead = 0;
                 int bytesRead;
                 
-                while (totalRead < fileSize && (bytesRead = is.read(buffer)) != -1) {
+                while (totalRead < fileSize) {
+                    int toRead = (int) Math.min(buffer.length, fileSize - totalRead);
+                    bytesRead = is.read(buffer, 0, toRead);
+                    if (bytesRead == -1) break;
+                    
                     baos.write(buffer, 0, bytesRead);
                     totalRead += bytesRead;
                 }
                 
                 response = in.readLine();
+                System.out.println("Server: " + response);
+                
                 if (response.startsWith("226")) {
                     String content = baos.toString("UTF-8");
                     fileContentArea.setText(content);
@@ -543,6 +597,7 @@ public class FTPClient extends JFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error opening file: " + e.getMessage(), 
                 "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -560,6 +615,9 @@ public class FTPClient extends JFrame {
         loginPassword.setText("");
         fileListArea.setText("");
         fileContentArea.setText("");
+        uploadFilePath.setText("");
+        downloadFileName.setText("");
+        openFileName.setText("");
         cardLayout.show(mainPanel, "login");
         
         JOptionPane.showMessageDialog(this, "Disconnected from server", 
