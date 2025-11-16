@@ -6,15 +6,13 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.PrintWriter;
+import java.io.IOException;
 import java.net.Socket;
 
 import javax.swing.BorderFactory;
@@ -36,8 +34,8 @@ public class FTPClient extends JFrame {
     private CardLayout cardLayout;
     private JPanel mainPanel;
     private Socket socket;
-    private BufferedReader in;
-    private PrintWriter out;
+    private DataInputStream dataIn;
+    private DataOutputStream dataOut;
     
     private JTextField loginUsername;
     private JPasswordField loginPassword;
@@ -182,7 +180,6 @@ public class FTPClient extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        // Top Panel
         JPanel topPanel = new JPanel();
         JLabel welcomeLabel = new JLabel("Connected to FTP Server");
         welcomeLabel.setFont(new Font("Arial", Font.BOLD, 16));
@@ -193,7 +190,6 @@ public class FTPClient extends JFrame {
         topPanel.add(logoutBtn);
         panel.add(topPanel, BorderLayout.NORTH);
         
-        // Split pane
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
         
         // Left - File List
@@ -241,7 +237,7 @@ public class FTPClient extends JFrame {
         
         panel.add(splitPane, BorderLayout.CENTER);
         
-        // Bottom Panel - FIXED: Dùng BoxLayout thay vì GridLayout
+        // Bottom Panel
         JPanel bottomPanel = new JPanel();
         bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(5, 0, 0, 0));
@@ -284,11 +280,26 @@ public class FTPClient extends JFrame {
         int port = Integer.parseInt(serverPort.getText().trim());
         
         socket = new Socket(host, port);
-        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        out = new PrintWriter(socket.getOutputStream(), true);
+        dataIn = new DataInputStream(socket.getInputStream());
+        dataOut = new DataOutputStream(socket.getOutputStream());
         
-        String response = in.readLine();
+        String response = readLine();
         System.out.println("Server: " + response);
+    }
+    
+    private String readLine() throws IOException {
+        StringBuilder sb = new StringBuilder();
+        int ch;
+        while ((ch = dataIn.read()) != -1) {
+            if (ch == '\n') break;
+            if (ch != '\r') sb.append((char) ch);
+        }
+        return sb.length() > 0 ? sb.toString() : null;
+    }
+    
+    private void writeLine(String line) throws IOException {
+        dataOut.writeBytes(line + "\r\n");
+        dataOut.flush();
     }
     
     private void handleLogin() {
@@ -304,15 +315,15 @@ public class FTPClient extends JFrame {
         try {
             connectToServer();
             
-            out.println("USER " + username);
-            String response = in.readLine();
+            writeLine("USER " + username);
+            String response = readLine();
             System.out.println("Server: " + response);
             
-            out.println("PASS " + password);
-            response = in.readLine();
+            writeLine("PASS " + password);
+            response = readLine();
             System.out.println("Server: " + response);
             
-            if (response.startsWith("230")) {
+            if (response != null && response.startsWith("230")) {
                 cardLayout.show(mainPanel, "ftp");
                 listFiles();
                 JOptionPane.showMessageDialog(this, "Login successful!", 
@@ -349,11 +360,11 @@ public class FTPClient extends JFrame {
         try {
             connectToServer();
             
-            out.println("REGISTER " + username + " " + password);
-            String response = in.readLine();
+            writeLine("REGISTER " + username + " " + password);
+            String response = readLine();
             System.out.println("Server: " + response);
             
-            if (response.startsWith("200")) {
+            if (response != null && response.startsWith("200")) {
                 JOptionPane.showMessageDialog(this, "Registration successful! Please login.", 
                     "Success", JOptionPane.INFORMATION_MESSAGE);
                 regUsername.setText("");
@@ -361,7 +372,8 @@ public class FTPClient extends JFrame {
                 regConfirmPassword.setText("");
                 cardLayout.show(mainPanel, "login");
             } else {
-                JOptionPane.showMessageDialog(this, response.substring(4), 
+                String msg = response != null ? response.substring(4) : "Registration failed";
+                JOptionPane.showMessageDialog(this, msg, 
                     "Error", JOptionPane.ERROR_MESSAGE);
             }
             
@@ -375,14 +387,14 @@ public class FTPClient extends JFrame {
     
     private void listFiles() {
         try {
-            out.println("LIST");
-            String response = in.readLine();
+            writeLine("LIST");
+            String response = readLine();
             
             fileListArea.setText("");
             fileListArea.append("Files on server:\n");
             fileListArea.append("=================\n\n");
             
-            if (response.startsWith("150")) {
+            if (response != null && response.startsWith("150")) {
                 String fileList = response.substring(4);
                 if (!fileList.isEmpty()) {
                     String[] files = fileList.split(";");
@@ -430,35 +442,31 @@ public class FTPClient extends JFrame {
                 return;
             }
             
-            // Gửi lệnh UPLOAD
-            out.println("UPLOAD " + file.getName() + " " + file.length());
-            out.flush();
-            
-            String response = in.readLine();
+            // Gửi lệnh UPLOAD với filename và size
+            writeLine("UPLOAD " + file.getName() + " " + file.length());
+            String response = readLine();
             System.out.println("Server: " + response);
             
-            if (response.startsWith("150")) {
-                // Gửi file data trực tiếp qua OutputStream
+            if (response != null && response.startsWith("150")) {
+                // Gửi binary data
                 FileInputStream fis = new FileInputStream(file);
-                OutputStream os = socket.getOutputStream();
-                
                 byte[] buffer = new byte[4096];
                 int bytesRead;
                 long totalSent = 0;
                 
                 while ((bytesRead = fis.read(buffer)) != -1) {
-                    os.write(buffer, 0, bytesRead);
+                    dataOut.write(buffer, 0, bytesRead);
                     totalSent += bytesRead;
                 }
                 
                 fis.close();
-                os.flush();
+                dataOut.flush();
                 
-                // Đợi xác nhận
-                response = in.readLine();
+                // Đọc response cuối
+                response = readLine();
                 System.out.println("Server: " + response);
                 
-                if (response.startsWith("226")) {
+                if (response != null && response.startsWith("226")) {
                     JOptionPane.showMessageDialog(this, 
                         "File uploaded successfully! (" + totalSent + " bytes)", 
                         "Success", JOptionPane.INFORMATION_MESSAGE);
@@ -488,32 +496,25 @@ public class FTPClient extends JFrame {
         }
         
         try {
-            // Gửi lệnh DOWNLOAD
-            out.println("DOWNLOAD " + fileName);
-            out.flush();
-            
-            String response = in.readLine();
+            writeLine("DOWNLOAD " + fileName);
+            String response = readLine();
             System.out.println("Server: " + response);
             
-            if (response.startsWith("150")) {
+            if (response != null && response.startsWith("150")) {
                 long fileSize = Long.parseLong(response.substring(4).trim());
                 
-                // Tạo thư mục downloads
                 File downloadDir = new File("client_downloads");
                 downloadDir.mkdirs();
                 File file = new File(downloadDir, fileName);
                 
-                // Nhận file data
                 FileOutputStream fos = new FileOutputStream(file);
-                InputStream is = socket.getInputStream();
-                
                 byte[] buffer = new byte[4096];
                 long totalRead = 0;
                 int bytesRead;
                 
                 while (totalRead < fileSize) {
                     int toRead = (int) Math.min(buffer.length, fileSize - totalRead);
-                    bytesRead = is.read(buffer, 0, toRead);
+                    bytesRead = dataIn.read(buffer, 0, toRead);
                     if (bytesRead == -1) break;
                     
                     fos.write(buffer, 0, bytesRead);
@@ -522,11 +523,10 @@ public class FTPClient extends JFrame {
                 
                 fos.close();
                 
-                // Đợi xác nhận
-                response = in.readLine();
+                response = readLine();
                 System.out.println("Server: " + response);
                 
-                if (response.startsWith("226")) {
+                if (response != null && response.startsWith("226")) {
                     JOptionPane.showMessageDialog(this, 
                         "File downloaded successfully!\nSaved to: " + file.getAbsolutePath() + 
                         "\n(" + totalRead + " bytes)", 
@@ -556,35 +556,31 @@ public class FTPClient extends JFrame {
         }
         
         try {
-            out.println("DOWNLOAD " + fileName);
-            out.flush();
-            
-            String response = in.readLine();
+            writeLine("DOWNLOAD " + fileName);
+            String response = readLine();
             System.out.println("Server: " + response);
             
-            if (response.startsWith("150")) {
+            if (response != null && response.startsWith("150")) {
                 long fileSize = Long.parseLong(response.substring(4).trim());
                 
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                InputStream is = socket.getInputStream();
-                
                 byte[] buffer = new byte[4096];
                 long totalRead = 0;
                 int bytesRead;
                 
                 while (totalRead < fileSize) {
                     int toRead = (int) Math.min(buffer.length, fileSize - totalRead);
-                    bytesRead = is.read(buffer, 0, toRead);
+                    bytesRead = dataIn.read(buffer, 0, toRead);
                     if (bytesRead == -1) break;
                     
                     baos.write(buffer, 0, bytesRead);
                     totalRead += bytesRead;
                 }
                 
-                response = in.readLine();
+                response = readLine();
                 System.out.println("Server: " + response);
                 
-                if (response.startsWith("226")) {
+                if (response != null && response.startsWith("226")) {
                     String content = baos.toString("UTF-8");
                     fileContentArea.setText(content);
                     fileContentArea.setCaretPosition(0);
@@ -604,7 +600,7 @@ public class FTPClient extends JFrame {
     private void handleLogout() {
         try {
             if (socket != null && !socket.isClosed()) {
-                out.println("QUIT");
+                writeLine("QUIT");
                 socket.close();
             }
         } catch (Exception e) {
