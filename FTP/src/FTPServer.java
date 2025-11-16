@@ -85,6 +85,7 @@ public class FTPServer extends JFrame {
             serverSocket = new ServerSocket(PORT);
             isRunning = true;
             log("Server started on port " + PORT);
+            log("Files directory: " + new File(FILES_DIR).getAbsolutePath());
             
             threadPool.execute(() -> {
                 while (isRunning) {
@@ -170,14 +171,19 @@ public class FTPServer extends JFrame {
                 
                 String line;
                 while ((line = in.readLine()) != null) {
-                    log("Command received: " + line);
+                    log("Command from " + socket.getInetAddress() + ": " + line);
                     handleCommand(line);
+                    
+                    if (line.toUpperCase().startsWith("QUIT")) {
+                        break;
+                    }
                 }
             } catch (IOException e) {
-                log("Client disconnected");
+                log("Client " + socket.getInetAddress() + " disconnected: " + e.getMessage());
             } finally {
                 try {
                     socket.close();
+                    log("Connection closed: " + socket.getInetAddress());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -185,7 +191,7 @@ public class FTPServer extends JFrame {
         }
         
         private void handleCommand(String command) throws IOException {
-            String[] parts = command.split(" ", 2);
+            String[] parts = command.split(" ", 3);
             String cmd = parts[0].toUpperCase();
             String arg = parts.length > 1 ? parts[1] : "";
             
@@ -199,26 +205,29 @@ public class FTPServer extends JFrame {
                     if (currentUser != null && users.containsKey(currentUser) 
                         && users.get(currentUser).equals(arg)) {
                         out.println("230 User logged in");
-                        log("User " + currentUser + " logged in");
+                        log("User " + currentUser + " logged in successfully");
                     } else {
                         out.println("530 Login incorrect");
+                        log("Failed login attempt for user: " + currentUser);
                         currentUser = null;
                     }
                     break;
                     
                 case "REGISTER":
-                    String[] creds = arg.split(" ", 2);
-                    if (creds.length == 2) {
-                        if (users.containsKey(creds[0])) {
-                            out.println("550 User already exists");
-                        } else {
-                            users.put(creds[0], creds[1]);
-                            saveUsers();
-                            out.println("200 Registration successful");
-                            log("New user registered: " + creds[0]);
-                        }
-                    } else {
+                    if (parts.length < 3) {
                         out.println("500 Invalid registration format");
+                        break;
+                    }
+                    String newUser = parts[1];
+                    String newPass = parts[2];
+                    
+                    if (users.containsKey(newUser)) {
+                        out.println("550 User already exists");
+                    } else {
+                        users.put(newUser, newPass);
+                        saveUsers();
+                        out.println("200 Registration successful");
+                        log("New user registered: " + newUser);
                     }
                     break;
                     
@@ -232,10 +241,13 @@ public class FTPServer extends JFrame {
                     StringBuilder fileList = new StringBuilder();
                     if (files != null) {
                         for (File f : files) {
-                            fileList.append(f.getName()).append(":").append(f.length()).append(";");
+                            if (f.isFile()) {
+                                fileList.append(f.getName()).append(":").append(f.length()).append(";");
+                            }
                         }
                     }
                     out.println("150 " + fileList.toString());
+                    log("File list sent to " + currentUser);
                     break;
                     
                 case "UPLOAD":
@@ -243,7 +255,14 @@ public class FTPServer extends JFrame {
                         out.println("530 Not logged in");
                         break;
                     }
-                    handleUpload(arg);
+                    // Format: UPLOAD filename filesize
+                    if (parts.length < 3) {
+                        out.println("500 Invalid UPLOAD format. Use: UPLOAD filename size");
+                        break;
+                    }
+                    String uploadFilename = parts[1];
+                    long uploadSize = Long.parseLong(parts[2]);
+                    handleUpload(uploadFilename, uploadSize);
                     break;
                     
                 case "DOWNLOAD":
@@ -256,59 +275,81 @@ public class FTPServer extends JFrame {
                     
                 case "QUIT":
                     out.println("221 Goodbye");
-                    socket.close();
+                    log("User " + currentUser + " disconnected");
                     break;
                     
                 default:
-                    out.println("500 Unknown command");
+                    out.println("500 Unknown command: " + cmd);
             }
         }
         
-        private void handleUpload(String filename) throws IOException {
-            out.println("150 Ready to receive");
+        private void handleUpload(String filename, long fileSize) throws IOException {
+            out.println("150 Ready to receive " + fileSize + " bytes");
+            out.flush();
             
-            String sizeStr = in.readLine();
-            long fileSize = Long.parseLong(sizeStr);
-            
-            FileOutputStream fos = new FileOutputStream(FILES_DIR + filename);
+            File file = new File(FILES_DIR + filename);
+            FileOutputStream fos = new FileOutputStream(file);
             InputStream is = socket.getInputStream();
             
             byte[] buffer = new byte[4096];
             long totalRead = 0;
             int bytesRead;
             
-            while (totalRead < fileSize && (bytesRead = is.read(buffer)) != -1) {
+            log("Receiving file: " + filename + " (" + fileSize + " bytes)");
+            
+            while (totalRead < fileSize) {
+                int toRead = (int) Math.min(buffer.length, fileSize - totalRead);
+                bytesRead = is.read(buffer, 0, toRead);
+                if (bytesRead == -1) {
+                    log("Connection closed prematurely during upload");
+                    break;
+                }
                 fos.write(buffer, 0, bytesRead);
                 totalRead += bytesRead;
             }
             
             fos.close();
-            out.println("226 Transfer complete");
-            log("File uploaded: " + filename);
+            
+            if (totalRead == fileSize) {
+                out.println("226 Transfer complete (" + totalRead + " bytes)");
+                log("File uploaded successfully: " + filename + " (" + totalRead + " bytes)");
+            } else {
+                out.println("426 Connection closed; transfer aborted");
+                log("Upload incomplete: " + filename + " (" + totalRead + "/" + fileSize + " bytes)");
+            }
         }
         
         private void handleDownload(String filename) throws IOException {
             File file = new File(FILES_DIR + filename);
-            if (!file.exists()) {
+            if (!file.exists() || !file.isFile()) {
                 out.println("550 File not found");
+                log("Download request failed: " + filename + " not found");
                 return;
             }
             
-            out.println("150 " + file.length());
+            long fileSize = file.length();
+            out.println("150 " + fileSize);
+            out.flush();
+            
+            log("Sending file: " + filename + " (" + fileSize + " bytes)");
             
             FileInputStream fis = new FileInputStream(file);
             OutputStream os = socket.getOutputStream();
             
             byte[] buffer = new byte[4096];
             int bytesRead;
+            long totalSent = 0;
+            
             while ((bytesRead = fis.read(buffer)) != -1) {
                 os.write(buffer, 0, bytesRead);
+                totalSent += bytesRead;
             }
             
             fis.close();
             os.flush();
-            out.println("226 Transfer complete");
-            log("File downloaded: " + filename);
+            
+            out.println("226 Transfer complete (" + totalSent + " bytes)");
+            log("File sent successfully: " + filename + " (" + totalSent + " bytes)");
         }
     }
     
